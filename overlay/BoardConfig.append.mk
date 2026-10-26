@@ -11,6 +11,9 @@ BOARD_RECOVERYIMAGE_PARTITION_SIZE := 67108864
 TW_LOAD_VENDOR_MODULES := "focaltech_mtk_v2_mmi.ko goodix_mtk_gtx8_mmi.ko goodix_mtk_gtx8_ts_tools_mmi.ko"
 
 TW_DEVICE_VERSION := Zybe
+# brightness (OrangeFox requires a value; path is auto-detected)
+TW_MAX_BRIGHTNESS := 2047
+TW_DEFAULT_BRIGHTNESS := 1200
 TW_EXTRA_LANGUAGES := false
 TW_EXCLUDE_TWRPAPP := true
 TW_EXCLUDE_PYTHON := true
