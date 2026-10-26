@@ -66,6 +66,30 @@ def main():
         drop = [e for e in ents if re.match(rb"^res/images/.*_text\.png$", e[1])]
         print("dropping", len(drop), "stock-recovery text bitmaps,", sum(len(e[2]) for e in drop), "bytes")
         ents = [e for e in ents if e not in drop]
+        gone = set(e[1].decode() for e in drop)
+        import hashlib
+        def keep(l):
+            s = l.strip()
+            return (not s) or s.split()[-1].lstrip("./") not in gone
+        # keep OrangeFox/TWRP ramdisk manifests consistent ("flash current recovery" checks them)
+        txt_hash = None
+        fixed = []
+        for h, name, body in ents:
+            if name == b"ramdisk-files.txt":
+                body = "\n".join(l for l in body.decode(errors="replace").split("\n") if keep(l)).encode()
+                txt_hash = hashlib.sha256(body).hexdigest()
+            fixed.append((h, name, body))
+        ents = []
+        for h, name, body in fixed:
+            if name == b"ramdisk-files.sha256sum":
+                out_l = []
+                for l in body.decode(errors="replace").split("\n"):
+                    if not keep(l): continue
+                    if txt_hash and l.strip().endswith("./ramdisk-files.txt"):
+                        l = txt_hash + "  ./ramdisk-files.txt"
+                    out_l.append(l)
+                body = "\n".join(out_l).encode()
+            ents.append((h, name, body))
         new_rd = gz(write_cpio(ents), tmp)
         print("ramdisk(gz) after trim+recompress:", len(new_rd))
     elif shutil.which("zopfli"):
