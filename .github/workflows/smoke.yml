@@ -1,0 +1,7 @@
+name: smoke
+on: [workflow_dispatch, push]
+jobs:
+  hi:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello; df -h /; nproc; lsb_release -a
