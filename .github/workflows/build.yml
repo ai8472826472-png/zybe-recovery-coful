@@ -15,7 +15,8 @@ env:
   TREE_SHA: b65cd226487f3b1e51d635cba8b3f3082e6f8ac8
   MODULES_REPO: https://github.com/Swastik369/twrp_device_motorola_coful
   MODULES_SHA: f1dc027d6045d6c5001db07cf2aed626e60e17a5
-  SRC: /home/runner/src
+  SRC: /src
+  DEBIAN_FRONTEND: noninteractive
 
 jobs:
   build:
@@ -23,39 +24,37 @@ jobs:
       fail-fast: false
       matrix:
         flavor: ${{ fromJSON(github.event.inputs.flavors || '["orangefox","twrp"]') }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
+      options: --privileged
     timeout-minutes: 340
     steps:
-      - uses: actions/checkout@v4
-        with:
-          path: zybe
-
-      - name: Free disk space
-        run: |
-          df -h /
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost /usr/share/swift /usr/local/.ghcup /opt/microsoft /opt/google /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules || true
-          sudo docker image prune -a -f >/dev/null 2>&1 || true
-          sudo apt-get clean
-          df -h /
+      - name: Disk
+        run: df -h / || true
 
       - name: Install build deps
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq git-core gnupg flex bison build-essential zip curl zlib1g-dev libc6-dev-i386 x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 python-is-python3 rsync bc lz4 cpio ccache zopfli libncurses5 libssl-dev
-          mkdir -p ~/bin
-          curl -sSL https://storage.googleapis.com/git-repo-downloads/repo -o ~/bin/repo
-          chmod +x ~/bin/repo
-          echo "$HOME/bin" >> $GITHUB_PATH
+          apt-get update -qq
+          apt-get install -y -qq git-core gnupg flex bison build-essential zip curl zlib1g-dev libc6-dev-i386 x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 python-is-python3 rsync bc lz4 cpio ccache zopfli libncurses5 libssl-dev openssl ca-certificates sudo procps kmod file xz-utils
+          mkdir -p /usr/local/bin
+          curl -sSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          chmod +x /usr/local/bin/repo
           git config --global user.name "zybe-builder"
           git config --global user.email "zybe-builder@users.noreply.github.com"
           git config --global color.ui false
+          git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v4
+        with:
+          path: zybe
 
       - name: Sync source (${{ matrix.flavor }})
         run: |
           mkdir -p $SRC
           if [ "${{ matrix.flavor }}" = "orangefox" ]; then
-            git clone --depth=1 https://gitlab.com/OrangeFox/sync.git /home/runner/foxsync
-            cd /home/runner/foxsync
+            git clone --depth=1 https://gitlab.com/OrangeFox/sync.git /foxsync
+            cd /foxsync
             bash orangefox_sync.sh --branch 12.1 --path $SRC
           else
             cd $SRC
@@ -70,18 +69,18 @@ jobs:
           D=$SRC/device/motorola/coful
           rm -rf $D
           git clone $TREE_REPO $D && (cd $D && git checkout $TREE_SHA && rm -rf .git)
-          git clone $MODULES_REPO /home/runner/sw && (cd /home/runner/sw && git checkout $MODULES_SHA)
+          git clone $MODULES_REPO /sw && (cd /sw && git checkout $MODULES_SHA)
           mkdir -p $D/recovery/root/vendor/lib/modules/1.1
-          cp /home/runner/sw/prebuilt/*.ko $D/recovery/root/vendor/lib/modules/1.1/
-          cp zybe/overlay/twrp_coful.mk $D/twrp_coful.mk
-          cat zybe/overlay/BoardConfig.append.mk >> $D/BoardConfig.mk
-          if [ "${{ matrix.flavor }}" = "orangefox" ]; then cat zybe/overlay/BoardConfig.fox.mk >> $D/BoardConfig.mk; fi
+          cp /sw/prebuilt/*.ko $D/recovery/root/vendor/lib/modules/1.1/
+          cp $GITHUB_WORKSPACE/zybe/overlay/twrp_coful.mk $D/twrp_coful.mk
+          cat $GITHUB_WORKSPACE/zybe/overlay/BoardConfig.append.mk >> $D/BoardConfig.mk
+          if [ "${{ matrix.flavor }}" = "orangefox" ]; then cat $GITHUB_WORKSPACE/zybe/overlay/BoardConfig.fox.mk >> $D/BoardConfig.mk; fi
           ls -la $D $D/recovery/root/vendor/lib/modules/1.1
           tail -60 $D/BoardConfig.mk
 
       - name: Zybe branding (never blocks the build)
         if: matrix.flavor == 'orangefox'
-        run: bash zybe/branding/apply_branding.sh $SRC || echo "branding skipped"
+        run: bash $GITHUB_WORKSPACE/zybe/branding/apply_branding.sh $SRC || echo "branding skipped"
 
       - name: Build boot image (recovery-as-boot)
         run: |
@@ -101,22 +100,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: buildlog-${{ matrix.flavor }}
-          path: /home/runner/src/build.log
+          path: /src/build.log
           if-no-files-found: ignore
 
       - name: Fit into the 32 MiB boot partition (gzip ramdisk)
         run: |
-          mkdir -p /home/runner/outimg
+          mkdir -p /outimg
           P=$SRC/out/target/product/coful
           NAME=ZybeRecovery-${{ matrix.flavor }}-coful-$(date -u +%Y%m%d)-r${{ github.run_number }}
-          python3 zybe/tools/fit_boot.py $P/boot.img /home/runner/outimg/$NAME-boot.img --src $SRC --limit 33554432
-          cd /home/runner/outimg && sha256sum *.img > SHA256SUMS.txt && cat SHA256SUMS.txt
+          python3 $GITHUB_WORKSPACE/zybe/tools/fit_boot.py $P/boot.img /outimg/$NAME-boot.img --src $SRC --limit 33554432
+          cd /outimg && sha256sum *.img > SHA256SUMS.txt && cat SHA256SUMS.txt
           echo "NAME=$NAME" >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.NAME }}
-          path: /home/runner/outimg/*
+          path: /outimg/*
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -126,5 +125,5 @@ jobs:
           body: |
             UNTESTED build for Moto G31 coful (XT2173-1/-2). Test with `fastboot boot` first. Do not flash before a temp-boot works.
             Base: ${{ matrix.flavor }}. Tree 404xg31/coful_G31@${{ env.TREE_SHA }}, touch modules from Swastik369.
-          files: /home/runner/outimg/*
+          files: /outimg/*
           prerelease: true
