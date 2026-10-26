@@ -28,6 +28,9 @@ jobs:
       image: ubuntu:22.04
       options: --privileged
     timeout-minutes: 340
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Disk
         run: df -h / || true
@@ -88,19 +91,29 @@ jobs:
           source build/envsetup.sh
           export ALLOW_MISSING_DEPENDENCIES=true LC_ALL=C FOX_BUILD_DEVICE=coful
           export OF_MAINTAINER=Zybe FOX_VARIANT=Zybe FOX_BUILD_TYPE=Unofficial
-          lunch twrp_coful-eng || exit 1
-          mka adbd bootimage -j$(nproc --all) 2>&1 | tee $SRC/build.log
+          lunch twrp_coful-eng > $SRC/build.log 2>&1 || { cat $SRC/build.log; exit 1; }
+          tail -40 $SRC/build.log
+          mka adbd bootimage -j$(nproc --all) 2>&1 | tee -a $SRC/build.log
           rc=${PIPESTATUS[0]}
           ls -la out/target/product/coful/ || true
           exit $rc
 
-      - name: Upload build log on failure
+      - name: Publish build log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        run: |
+          mkdir -p /faillog
+          (tail -n 400 /src/build.log 2>/dev/null || echo "no build.log") > /faillog/build-tail-${{ matrix.flavor }}.txt
+          grep -n -E "error:|FAILED:|ninja: build stopped|No rule to make|too large|Error " /src/build.log 2>/dev/null | head -200 > /faillog/build-errors-${{ matrix.flavor }}.txt || true
+          ls -la /faillog
+
+      - name: Failure log release
+        if: failure()
+        uses: softprops/action-gh-release@v2
         with:
-          name: buildlog-${{ matrix.flavor }}
-          path: /src/build.log
-          if-no-files-found: ignore
+          tag_name: log-${{ matrix.flavor }}-r${{ github.run_number }}
+          name: build log ${{ matrix.flavor }} r${{ github.run_number }} (failed)
+          files: /faillog/*
+          prerelease: true
 
       - name: Fit into the 32 MiB boot partition (gzip ramdisk)
         run: |
