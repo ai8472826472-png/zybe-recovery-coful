@@ -47,6 +47,8 @@ def gz(data, tmp):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("inp"); ap.add_argument("out")
     ap.add_argument("--src", required=True); ap.add_argument("--limit", type=int, default=33554432)
+    ap.add_argument("--dtb_offset", default="0x4bc80000", help="stock coful boot.img uses 0x4bc80000; empty = keep")
+    ap.add_argument("--kernel", default="", help="optional replacement kernel (e.g. the stock boot.img kernel)")
     a = ap.parse_args()
     mk = os.path.join(a.src, "system/tools/mkbootimg")
     tmp = tempfile.mkdtemp()
@@ -100,6 +102,8 @@ def main():
     toks = shlex.split(args)
     for i, t in enumerate(toks):
         if t == "--ramdisk": toks[i+1] = tmp + "/rd.gz"
+        if t == "--dtb_offset" and a.dtb_offset: toks[i+1] = a.dtb_offset
+        if t == "--kernel" and a.kernel: toks[i+1] = a.kernel
     subprocess.run([sys.executable, os.path.join(mk, "mkbootimg.py")] + toks + ["--output", a.out], check=True)
     size = os.path.getsize(a.out)
     print("repacked size", size, "limit", a.limit)
