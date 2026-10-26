@@ -2,10 +2,6 @@ name: Build Zybe Recovery (Moto G31 coful)
 
 on:
   workflow_dispatch:
-    inputs:
-      flavors:
-        description: 'JSON list: orangefox, twrp'
-        default: '["orangefox","twrp"]'
 
 permissions:
   contents: write
@@ -23,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavor: ${{ fromJSON(github.event.inputs.flavors || '["orangefox","twrp"]') }}
+        flavor: [orangefox, twrp]
     runs-on: ubuntu-latest
     container:
       image: ubuntu:22.04
